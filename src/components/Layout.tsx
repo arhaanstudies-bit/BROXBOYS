@@ -1,12 +1,11 @@
 import { NavLink, useLocation, Outlet } from 'react-router-dom'
-import { LayoutDashboard, Users, Radio, Terminal, MessageSquare, Settings, Send } from 'lucide-react'
+import { LayoutDashboard, Users, Radio, Terminal, Settings, Send } from 'lucide-react'
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/users', label: 'Users', icon: Users },
   { to: '/broadcasts', label: 'Broadcasts', icon: Radio },
   { to: '/commands', label: 'Commands', icon: Terminal },
-  { to: '/messages', label: 'Messages', icon: MessageSquare },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 

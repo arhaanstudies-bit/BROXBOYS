@@ -4,7 +4,6 @@ import Dashboard from './pages/Dashboard'
 import Users from './pages/Users'
 import Broadcasts from './pages/Broadcasts'
 import Commands from './pages/Commands'
-import Messages from './pages/Messages'
 import Settings from './pages/Settings'
 
 export default function App() {
@@ -16,7 +15,6 @@ export default function App() {
         <Route path="/users" element={<Users />} />
         <Route path="/broadcasts" element={<Broadcasts />} />
         <Route path="/commands" element={<Commands />} />
-        <Route path="/messages" element={<Messages />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>

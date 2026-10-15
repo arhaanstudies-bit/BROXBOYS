@@ -42,40 +42,35 @@ export default function Broadcasts() {
       return
     }
 
-    const { data: users } = await supabase
-      .from('bot_users')
-      .select('id')
-      .eq('is_active', true)
-      .eq('is_blocked', false)
-
-    let sent = 0
-    let failed = 0
-
-    if (users) {
-      for (const user of users) {
-        const { error: msgError } = await supabase.from('messages').insert({
-          bot_user_id: user.id,
-          direction: 'outgoing',
-          text: text.trim(),
-          status: 'delivered',
-        })
-        if (msgError) {
-          failed++
-        } else {
-          sent++
-        }
-      }
-    }
-
-    await supabase
-      .from('broadcasts')
-      .update({
-        status: sent > 0 ? 'sent' : 'failed',
-        sent_count: sent,
-        failed_count: failed,
-        sent_at: new Date().toISOString(),
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-broadcast`
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ broadcastId: newBroadcast.id, text: text.trim() }),
       })
-      .eq('id', newBroadcast.id)
+
+      if (!response.ok) throw new Error(`Request failed (${response.status})`)
+      const result = await response.json()
+
+      await supabase
+        .from('broadcasts')
+        .update({
+          status: result.sent > 0 ? 'sent' : 'failed',
+          sent_count: result.sent ?? 0,
+          failed_count: result.failed ?? 0,
+          sent_at: new Date().toISOString(),
+        })
+        .eq('id', newBroadcast.id)
+    } catch {
+      await supabase
+        .from('broadcasts')
+        .update({ status: 'failed', sent_at: new Date().toISOString() })
+        .eq('id', newBroadcast.id)
+    }
 
     setText('')
     setShowModal(false)
@@ -110,7 +105,7 @@ export default function Broadcasts() {
           </div>
           <div>
             <h3 className="text-lg font-semibold text-white">New Broadcast</h3>
-            <p className="text-sm text-dark-400">Send a message to all {userCount} active users</p>
+            <p className="text-sm text-dark-400">Send a message to all {userCount} active users via Telegram</p>
           </div>
         </div>
         <textarea
@@ -164,7 +159,7 @@ export default function Broadcasts() {
                     <p className="text-sm text-dark-100 mb-1">{b.text}</p>
                     <div className="flex gap-4 text-xs text-dark-400">
                       <span>Target: {b.target_count}</span>
-                      <span className="text-success-500">Sent: {b.sent_count}</span>
+                      <span className="text-success-500">Delivered: {b.sent_count}</span>
                       {b.failed_count > 0 && <span className="text-error-500">Failed: {b.failed_count}</span>}
                     </div>
                   </div>
@@ -198,7 +193,7 @@ export default function Broadcasts() {
               </div>
               <div className="flex items-center gap-2 text-sm text-dark-300">
                 <Send className="w-4 h-4 text-primary-500" />
-                Will be sent to <span className="font-semibold text-white">{userCount}</span> active users
+                Will be sent to <span className="font-semibold text-white">{userCount}</span> active users via Telegram
               </div>
             </div>
             <div className="flex gap-3 justify-end">

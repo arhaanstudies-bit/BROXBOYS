@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Upsert user
+    // Track user (no message content stored — chats stay in Telegram only)
     await supabase.from("bot_users").upsert({
       id: msg.from.id,
       username: msg.from.username ?? null,
@@ -57,15 +57,9 @@ Deno.serve(async (req: Request) => {
       last_activity: new Date().toISOString(),
     }, { onConflict: "id" });
 
-    // Store incoming message
     const text = msg.text ?? "";
-    await supabase.from("messages").insert({
-      bot_user_id: msg.from.id,
-      direction: "incoming",
-      text: text || null,
-    });
 
-    // Handle commands
+    // Handle commands — reply directly via Telegram, no message storage
     if (text.startsWith("/")) {
       const commandName = text.slice(1).split(" ")[0].split("@")[0].toLowerCase();
 
@@ -83,13 +77,7 @@ Deno.serve(async (req: Request) => {
           : "Welcome!";
 
         await sendTelegramMessage(msg.chat.id, welcomeText);
-        await supabase.from("messages").insert({
-          bot_user_id: msg.from.id,
-          direction: "outgoing",
-          text: welcomeText,
-        });
       } else {
-        // Look up custom command
         const { data: cmd } = await supabase
           .from("bot_commands")
           .select("*")
@@ -99,23 +87,15 @@ Deno.serve(async (req: Request) => {
 
         if (cmd) {
           await sendTelegramMessage(msg.chat.id, cmd.response);
-          await supabase.from("messages").insert({
-            bot_user_id: msg.from.id,
-            direction: "outgoing",
-            text: cmd.response,
-          });
         } else {
-          const fallback = "I didn't understand that command. Use /help to see available commands.";
-          await sendTelegramMessage(msg.chat.id, fallback);
-          await supabase.from("messages").insert({
-            bot_user_id: msg.from.id,
-            direction: "outgoing",
-            text: fallback,
-          });
+          await sendTelegramMessage(
+            msg.chat.id,
+            "I didn't understand that command. Use /help to see available commands."
+          );
         }
       }
     } else {
-      // Non-command message — check auto reply
+      // Non-command message — auto-reply if enabled
       const { data: autoSetting } = await supabase
         .from("bot_settings")
         .select("value")
@@ -123,13 +103,10 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       if (autoSetting?.value === true) {
-        const reply = "Thanks for your message! Use /help to see available commands.";
-        await sendTelegramMessage(msg.chat.id, reply);
-        await supabase.from("messages").insert({
-          bot_user_id: msg.from.id,
-          direction: "outgoing",
-          text: reply,
-        });
+        await sendTelegramMessage(
+          msg.chat.id,
+          "Thanks for your message! Use /help to see available commands."
+        );
       }
     }
 

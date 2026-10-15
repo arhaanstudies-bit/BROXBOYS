@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Users, Radio, MessageSquare, TrendingUp, UserCheck, Activity, Send, CheckCircle, AlertCircle } from 'lucide-react'
-import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { Users, Radio, TrendingUp, UserCheck, Activity, Send, CheckCircle, AlertCircle, UserX } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import type { BotUser, Broadcast } from '@/types'
 
 interface Stats {
@@ -9,15 +9,12 @@ interface Stats {
   activeUsers: number
   blockedUsers: number
   totalBroadcasts: number
-  totalMessages: number
-  incomingMessages: number
-  outgoingMessages: number
+  sentBroadcasts: number
 }
 
 interface ChartPoint {
   date: string
   users: number
-  messages: number
 }
 
 export default function Dashboard() {
@@ -29,14 +26,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function load() {
-      const [usersRes, activeRes, blockedRes, broadcastsRes, messagesRes, incomingRes, outgoingRes] = await Promise.all([
+      const [usersRes, activeRes, blockedRes, broadcastsRes, sentBRes] = await Promise.all([
         supabase.from('bot_users').select('*', { count: 'exact', head: true }),
         supabase.from('bot_users').select('*', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('bot_users').select('*', { count: 'exact', head: true }).eq('is_blocked', true),
         supabase.from('broadcasts').select('*', { count: 'exact', head: true }),
-        supabase.from('messages').select('*', { count: 'exact', head: true }),
-        supabase.from('messages').select('*', { count: 'exact', head: true }).eq('direction', 'incoming'),
-        supabase.from('messages').select('*', { count: 'exact', head: true }).eq('direction', 'outgoing'),
+        supabase.from('broadcasts').select('*', { count: 'exact', head: true }).eq('status', 'sent'),
       ])
 
       setStats({
@@ -44,9 +39,7 @@ export default function Dashboard() {
         activeUsers: activeRes.count ?? 0,
         blockedUsers: blockedRes.count ?? 0,
         totalBroadcasts: broadcastsRes.count ?? 0,
-        totalMessages: messagesRes.count ?? 0,
-        incomingMessages: incomingRes.count ?? 0,
-        outgoingMessages: outgoingRes.count ?? 0,
+        sentBroadcasts: sentBRes.count ?? 0,
       })
 
       const now = new Date()
@@ -55,28 +48,21 @@ export default function Dashboard() {
         const day = new Date(now)
         day.setDate(now.getDate() - i)
         const dayStr = day.toISOString().slice(0, 10)
-        days.push({ date: dayStr.slice(5), users: 0, messages: 0 })
+        days.push({ date: dayStr.slice(5), users: 0 })
       }
 
       const fourteenAgo = new Date(now)
       fourteenAgo.setDate(now.getDate() - 13)
-      const [newUsersRes, newMsgsRes] = await Promise.all([
-        supabase.from('bot_users').select('joined_at').gte('joined_at', fourteenAgo.toISOString()),
-        supabase.from('messages').select('created_at').gte('created_at', fourteenAgo.toISOString()),
-      ])
+      const { data: newUsersRes } = await supabase
+        .from('bot_users')
+        .select('joined_at')
+        .gte('joined_at', fourteenAgo.toISOString())
 
-      if (newUsersRes.data) {
-        for (const u of newUsersRes.data) {
+      if (newUsersRes) {
+        for (const u of newUsersRes) {
           const d = u.joined_at.slice(5, 10)
           const pt = days.find((p) => p.date === d)
           if (pt) pt.users++
-        }
-      }
-      if (newMsgsRes.data) {
-        for (const m of newMsgsRes.data) {
-          const d = m.created_at.slice(5, 10)
-          const pt = days.find((p) => p.date === d)
-          if (pt) pt.messages++
         }
       }
       setChartData(days)
@@ -103,8 +89,8 @@ export default function Dashboard() {
   const statCards = [
     { label: 'Total Users', value: stats.totalUsers, icon: Users, color: 'primary', change: `+${chartData.slice(-7).reduce((a, b) => a + b.users, 0)} this week` },
     { label: 'Active Users', value: stats.activeUsers, icon: UserCheck, color: 'success' },
-    { label: 'Messages', value: stats.totalMessages, icon: MessageSquare, color: 'accent', change: `${stats.incomingMessages} in / ${stats.outgoingMessages} out` },
-    { label: 'Broadcasts', value: stats.totalBroadcasts, icon: Radio, color: 'warning' },
+    { label: 'Blocked Users', value: stats.blockedUsers, icon: UserX, color: 'error' },
+    { label: 'Broadcasts Sent', value: stats.sentBroadcasts, icon: Radio, color: 'warning', change: `${stats.totalBroadcasts} total` },
   ]
 
   return (
@@ -133,51 +119,30 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white">New Users (14 days)</h3>
-            <Activity className="w-5 h-5 text-dark-400" />
-          </div>
-          <ResponsiveContainer width="100%" height={250}>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="userGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
-              <YAxis stroke="#64748b" fontSize={12} allowDecimals={false} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }}
-                labelStyle={{ color: '#94a3b8' }}
-              />
-              <Area type="monotone" dataKey="users" stroke="#3b82f6" strokeWidth={2} fill="url(#userGrad)" name="New Users" />
-            </AreaChart>
-          </ResponsiveContainer>
+      {/* Chart */}
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-white">New Users (14 days)</h3>
+          <Activity className="w-5 h-5 text-dark-400" />
         </div>
-
-        <div className="card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white">Message Activity (14 days)</h3>
-            <MessageSquare className="w-5 h-5 text-dark-400" />
-          </div>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
-              <YAxis stroke="#64748b" fontSize={12} allowDecimals={false} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }}
-                labelStyle={{ color: '#94a3b8' }}
-              />
-              <Line type="monotone" dataKey="messages" stroke="#d946ef" strokeWidth={2} dot={false} name="Messages" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <ResponsiveContainer width="100%" height={280}>
+          <AreaChart data={chartData}>
+            <defs>
+              <linearGradient id="userGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+            <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
+            <YAxis stroke="#64748b" fontSize={12} allowDecimals={false} />
+            <Tooltip
+              contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }}
+              labelStyle={{ color: '#94a3b8' }}
+            />
+            <Area type="monotone" dataKey="users" stroke="#3b82f6" strokeWidth={2} fill="url(#userGrad)" name="New Users" />
+          </AreaChart>
+        </ResponsiveContainer>
       </div>
 
       {/* Recent Activity */}
@@ -198,7 +163,7 @@ export default function Dashboard() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-dark-100 truncate">{b.text}</p>
                     <p className="text-xs text-dark-400 mt-0.5">
-                      {b.status} · {b.sent_count}/{b.target_count} sent
+                      {b.status} · {b.sent_count}/{b.target_count} delivered
                     </p>
                   </div>
                 </div>

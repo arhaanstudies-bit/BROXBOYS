@@ -22,16 +22,6 @@ export interface Broadcast {
   scheduled_for: string | null
 }
 
-export interface Message {
-  id: string
-  bot_user_id: number | null
-  direction: 'incoming' | 'outgoing'
-  text: string | null
-  status: 'pending' | 'delivered' | 'failed'
-  created_at: string
-  bot_user?: Pick<BotUser, 'id' | 'username' | 'first_name'> | null
-}
-
 export interface BotSetting {
   id: string
   key: string
