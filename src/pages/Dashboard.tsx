@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Users, Radio, TrendingUp, UserCheck, Activity, Send, CheckCircle, AlertCircle, UserX } from 'lucide-react'
+import { Users, Radio, TrendingUp, UserCheck, Activity, Send, CheckCircle, AlertCircle, UserX, Wifi, WifiOff, Loader2, RefreshCw, Zap } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import type { BotUser, Broadcast } from '@/types'
+import type { BotUser, Broadcast, BotStatus } from '@/types'
+import { useBotStatus } from '@/hooks/useBotStatus'
 
 interface Stats {
   totalUsers: number
@@ -18,6 +19,7 @@ interface ChartPoint {
 }
 
 export default function Dashboard() {
+  const { status: botStatus, setupWebhook, settingUp, refresh } = useBotStatus()
   const [stats, setStats] = useState<Stats | null>(null)
   const [chartData, setChartData] = useState<ChartPoint[]>([])
   const [recentBroadcasts, setRecentBroadcasts] = useState<Broadcast[]>([])
@@ -95,6 +97,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Bot Health Banner */}
+      <BotHealthBanner status={botStatus} onSetup={setupWebhook} settingUp={settingUp} onRefresh={refresh} />
+
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((card) => {
@@ -199,6 +204,76 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function BotHealthBanner({ status, onSetup, settingUp, onRefresh }: {
+  status: BotStatus | null
+  onSetup: () => Promise<void>
+  settingUp: boolean
+  onRefresh: () => Promise<void>
+}) {
+  if (!status) return null
+
+  const s = status.status
+
+  if (s === 'online') {
+    return (
+      <div className="card p-4 border-success-500/30 bg-success-500/5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-success-500/10 flex items-center justify-center">
+            <Wifi className="w-5 h-5 text-success-500" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white">Bot is running 24/7</p>
+            <p className="text-xs text-dark-400">
+              {status.bot_username ? `@${status.bot_username} · ` : ''}Webhook active · Last heartbeat {status.last_heartbeat ? new Date(status.last_heartbeat).toLocaleTimeString() : 'pending'}
+            </p>
+          </div>
+        </div>
+        <button onClick={onRefresh} className="btn-ghost text-xs">
+          <RefreshCw className="w-3.5 h-3.5" />
+          Refresh
+        </button>
+      </div>
+    )
+  }
+
+  if (s === 'starting') {
+    return (
+      <div className="card p-4 border-warning-500/30 bg-warning-500/5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-warning-500/10 flex items-center justify-center">
+            <Loader2 className="w-5 h-5 text-warning-500 animate-spin" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white">Bot is starting up...</p>
+            <p className="text-xs text-dark-400">Waiting for first heartbeat from Telegram</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // offline or error
+  return (
+    <div className="card p-4 border-error-500/30 bg-error-500/5 flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-error-500/10 flex items-center justify-center">
+          <WifiOff className="w-5 h-5 text-error-500" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-white">Bot needs setup</p>
+          <p className="text-xs text-dark-400">
+            {status.last_error ?? 'Webhook not registered'} — click to activate 24/7 mode
+          </p>
+        </div>
+      </div>
+      <button onClick={onSetup} disabled={settingUp} className="btn-primary text-xs">
+        {settingUp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+        {settingUp ? 'Activating...' : 'Activate Bot'}
+      </button>
     </div>
   )
 }

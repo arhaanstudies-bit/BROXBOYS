@@ -1,5 +1,6 @@
 import { NavLink, useLocation, Outlet } from 'react-router-dom'
 import { LayoutDashboard, Users, Radio, Terminal, Settings, Send } from 'lucide-react'
+import { useBotStatus } from '@/hooks/useBotStatus'
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -8,6 +9,27 @@ const navItems = [
   { to: '/commands', label: 'Commands', icon: Terminal },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
+
+function StatusBadge() {
+  const { status } = useBotStatus()
+
+  const config = {
+    online: { color: 'bg-success-500', text: 'Bot Online', pulse: true },
+    offline: { color: 'bg-dark-500', text: 'Bot Offline', pulse: false },
+    error: { color: 'bg-error-500', text: 'Bot Error', pulse: true },
+    starting: { color: 'bg-warning-500', text: 'Starting...', pulse: true },
+  }
+
+  const s = status?.status ?? 'offline'
+  const c = config[s] ?? config.offline
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={`w-1.5 h-1.5 rounded-full ${c.color} ${c.pulse ? 'animate-pulse' : ''}`} />
+      <p className="text-xs text-dark-400">{c.text}</p>
+    </div>
+  )
+}
 
 export default function Layout() {
   const location = useLocation()
@@ -58,10 +80,7 @@ export default function Layout() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-dark-100 truncate">Admin</p>
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-success-500 animate-pulse" />
-                <p className="text-xs text-dark-400">Online</p>
-              </div>
+              <StatusBadge />
             </div>
           </div>
         </div>

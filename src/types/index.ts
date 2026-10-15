@@ -38,3 +38,14 @@ export interface BotCommand {
   is_enabled: boolean
   created_at: string
 }
+
+export interface BotStatus {
+  id: number
+  status: 'online' | 'offline' | 'error' | 'starting'
+  webhook_active: boolean
+  last_heartbeat: string | null
+  last_error: string | null
+  telegram_api_ok: boolean
+  bot_username: string | null
+  updated_at: string
+}

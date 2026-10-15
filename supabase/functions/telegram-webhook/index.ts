@@ -25,9 +25,36 @@ interface TelegramUpdate {
   };
 }
 
+async function updateStatus(partial: Record<string, unknown>): Promise<void> {
+  try {
+    await supabase
+      .from("bot_status")
+      .update({ ...partial, updated_at: new Date().toISOString() })
+      .eq("id", 1);
+  } catch { /* never let status update crash the handler */ }
+}
+
+async function getBotToken(): Promise<string | null> {
+  const { data } = await supabase
+    .from("bot_settings")
+    .select("value")
+    .eq("key", "bot_token")
+    .maybeSingle();
+  const token = data?.value;
+  if (!token || typeof token !== "string" || token.length < 10) return null;
+  return token;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  // GET = health probe from the panel
+  if (req.method === "GET") {
+    return new Response(JSON.stringify({ ok: true, service: "telegram-webhook", time: new Date().toISOString() }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
@@ -42,6 +69,8 @@ Deno.serve(async (req: Request) => {
     const msg = update.message;
 
     if (!msg || !msg.from) {
+      // Still record a heartbeat — Telegram sends empty bodies as connection tests
+      await updateStatus({ status: "online", last_heartbeat: new Date().toISOString(), last_error: null });
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -59,7 +88,9 @@ Deno.serve(async (req: Request) => {
 
     const text = msg.text ?? "";
 
-    // Handle commands — reply directly via Telegram, no message storage
+    // Mark heartbeat — bot is alive and receiving
+    await updateStatus({ status: "online", last_heartbeat: new Date().toISOString(), last_error: null });
+
     if (text.startsWith("/")) {
       const commandName = text.slice(1).split(" ")[0].split("@")[0].toLowerCase();
 
@@ -95,7 +126,6 @@ Deno.serve(async (req: Request) => {
         }
       }
     } else {
-      // Non-command message — auto-reply if enabled
       const { data: autoSetting } = await supabase
         .from("bot_settings")
         .select("value")
@@ -114,26 +144,45 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
+    // Record the error but still return 200 so Telegram doesn't retry flood
+    await updateStatus({ status: "error", last_error: String(err.message ?? err), last_heartbeat: new Date().toISOString() });
+    return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
 
 async function sendTelegramMessage(chatId: number, text: string): Promise<void> {
-  const { data: tokenSetting } = await supabase
-    .from("bot_settings")
-    .select("value")
-    .eq("key", "bot_token")
-    .maybeSingle();
+  const token = await getBotToken();
+  if (!token) return;
 
-  const token = tokenSetting?.value;
-  if (!token || typeof token !== "string" || token.length < 10) return;
-
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text }),
-  });
+  // Retry up to 3 times with exponential backoff
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text }),
+      });
+      if (res.ok) return;
+      // 429 = rate limited — respect retry_after
+      if (res.status === 429) {
+        const body = await res.json().catch(() => ({}));
+        const wait = (body.parameters?.retry_after ?? 1) * 1000;
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
+      // 5xx — retry
+      if (res.status >= 500) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      // 4xx (non-429) — don't retry
+      return;
+    } catch {
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+      }
+    }
+  }
 }
