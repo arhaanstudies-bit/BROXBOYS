@@ -28,9 +28,10 @@ export function useBotStatus() {
   const [checking, setChecking] = useState(false)
   const [settingUp, setSettingUp] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const autoActivatedRef = useRef(false)
 
   const refresh = useCallback(async () => {
-    // Call the health edge function to check + auto-repair
+    // Call the health edge function to check + auto-repair webhook
     await callHealth('check')
 
     // Read the updated status from the database
@@ -52,15 +53,30 @@ export function useBotStatus() {
   }, [refresh])
 
   useEffect(() => {
-    refresh()
+    // First load: check status, then auto-activate if offline
+    (async () => {
+      await refresh()
+      // If bot is offline and we haven't auto-activated yet, do it now
+      if (!autoActivatedRef.current) {
+        autoActivatedRef.current = true
+        const { data } = await supabase
+          .from('bot_status')
+          .select('status')
+          .eq('id', 1)
+          .maybeSingle()
+        if (data && data.status !== 'online') {
+          await setupWebhook()
+        }
+      }
+    })()
 
-    // Poll every 60 seconds to keep status fresh and auto-repair webhook
-    timerRef.current = setInterval(refresh, 60_000)
+    // Poll every 30 seconds to keep status fresh and auto-repair webhook
+    timerRef.current = setInterval(refresh, 30_000)
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [refresh])
+  }, [refresh, setupWebhook])
 
   return { status, checking, settingUp, setupWebhook, refresh }
 }
