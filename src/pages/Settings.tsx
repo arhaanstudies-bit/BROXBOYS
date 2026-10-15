@@ -42,10 +42,9 @@ export default function Settings() {
   async function saveSetting(key: string) {
     setSaving(key)
     const val = values[key]
-    const jsonValue = typeof val === 'boolean' ? val : val
 
     await supabase.from('bot_settings').update({
-      value: JSON.stringify(jsonValue),
+      value: val,
       updated_at: new Date().toISOString(),
     }).eq('key', key)
 
